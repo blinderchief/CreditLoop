@@ -165,7 +165,5 @@ frontend/   Vite + React + TS + Tailwind + Recharts (landing + dashboard)
 
 ## More
 
-- [DEPLOY.md](DEPLOY.md) — how to ship it (Render/Railway/Fly single-service, or Vercel split).
-- [SUBMISSION.md](SUBMISSION.md) — what it solves, the 5-minute pitch, and the build challenges.
 - [ARCHITECTURE.md](ARCHITECTURE.md) — the three layers and why deterministic ≠ learned.
 - [WHATBROKE.md](WHATBROKE.md) — honest bugs and what's still mock, not real.
