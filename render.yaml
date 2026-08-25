@@ -1,0 +1,20 @@
+# One-click deploy to Render (render.com). Push this repo, then "New +" →
+# "Blueprint" → point at this file. Builds the single Docker image (SPA + API)
+# and serves everything on one URL.
+services:
+  - type: web
+    name: creditloop
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      # Optional — set this in the Render dashboard to turn on real AI (Gemini
+      # vision + drafting). Leave unset and the app runs on synthetic/templates.
+      - key: CREDITLOOP_GEMINI_API_KEY
+        sync: false
+      - key: CREDITLOOP_GEMINI_MODEL
+        value: gemini-flash-latest
+    # SQLite is regenerated on boot (synthetic data), so no persistent disk is
+    # required for the demo. For durable data, add a paid Render disk mounted at
+    # /app/backend/data.

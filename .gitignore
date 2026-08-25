@@ -1,0 +1,20 @@
+# python
+__pycache__/
+*.pyc
+backend/.venv/
+backend/.env
+backend/data/creditloop.db
+backend/data/receipts/
+backend/data/*.json
+
+# node / frontend
+frontend/node_modules/
+frontend/dist/
+
+# os
+.DS_Store
+
+# NOTE: docs/screenshots/ is committed on purpose (used by the README).
+CreditLoop-PRD.md
+About.md
+SUBMISSION.md

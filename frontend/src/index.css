@@ -1,0 +1,68 @@
+@import "tailwindcss";
+
+/* CreditLoop — the "sea storm" system.
+   Near-black warm charcoal, cream text, and a golden light beam as the accent:
+   the recovered credit is the light breaking through the storm.
+   money = gold (light returns) · loss = rust · risk = dim bronze. */
+@theme {
+  --color-paper: #0d0b09;        /* page background (deep storm) */
+  --color-card: #17120c;         /* card surface */
+  --color-elevated: #201910;     /* nested surface */
+  --color-ink: #f2e7d3;          /* warm cream text */
+  --color-muted: #9d8b71;        /* warm taupe */
+  --color-line: #2a2117;         /* hairline borders */
+
+  --color-money: #e9b357;        /* gold — recovered, positive */
+  --color-money-soft: #2a2010;
+  --color-loss: #db6048;         /* rust — lost */
+  --color-loss-soft: #2c150f;
+  --color-risk: #cf9a4e;         /* bronze — at risk / pending */
+  --color-risk-soft: #281d0e;
+  --color-accent: #e9b357;       /* gold — interactive */
+  --color-accent-soft: #241b0d;
+
+  /* the light itself, for the landing hero + glows */
+  --color-glow: #f7dca0;
+  --color-gold: #e9b357;
+  --color-storm-900: #0b0906;
+
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+html { font-family: var(--font-sans); }
+body {
+  margin: 0;
+  background: var(--color-paper);
+  color: var(--color-ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+.tnum { font-variant-numeric: tabular-nums; }
+
+.card {
+  background: var(--color-card);
+  border: 1px solid var(--color-line);
+  border-radius: 16px;
+}
+
+*::-webkit-scrollbar { width: 9px; height: 9px; }
+*::-webkit-scrollbar-thumb { background: #3a2f20; border-radius: 999px; }
+*::-webkit-scrollbar-track { background: transparent; }
+
+@keyframes fadeup { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.fadeup { animation: fadeup .45s ease both; }
+
+/* faint gold vignette used on dark surfaces */
+.glow-gold { box-shadow: 0 0 80px -20px rgba(233, 179, 87, 0.25); }
+
+/* subtle dot-grid texture (Ramp-style) for dark sections */
+.dotgrid {
+  background-image: radial-gradient(rgba(233, 179, 87, 0.07) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+/* seamless marquee for the live ticker */
+@keyframes marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+.marquee { display: inline-flex; white-space: nowrap; animation: marquee 40s linear infinite; }
+.marquee-wrap:hover .marquee { animation-play-state: paused; }
