@@ -12,7 +12,7 @@ into later, with calibration measured on the reliability curve.
 
 from __future__ import annotations
 
-from .domain import Decision, ExpenseCategory, FilingFrequency
+from .domain import Decision, DEAD_DECISIONS, ExpenseCategory, FilingFrequency
 
 # Small category priors: pre-planned B2B spend files more reliably than ad-hoc.
 _CATEGORY_PRIOR = {
@@ -30,9 +30,14 @@ def predict_recoverability(
     category: ExpenseCategory,
 ) -> float:
     """Return a calibrated probability in [0, 1]."""
-    # If the law already says the money can't come back, P(recover) is ~0.
-    if decision in (Decision.UNRECOVERABLE_WRONG_ENTITY, Decision.BLOCKED_17_5, Decision.EXCEPTION):
+    # Structurally dead (state-trapped / blocked / wrong entity) or undecided:
+    # the credit will not appear in our 2B. P(recover) is ~0.
+    if decision in DEAD_DECISIONS or decision == Decision.EXCEPTION:
         return 0.0
+    # Fixable (wrong GSTIN used): recoverable only once reissued — won't appear
+    # in the current 2B, so P(appears now) is low.
+    if decision == Decision.WRONG_GSTIN_USED:
+        return 0.1
 
     # QRMP suppliers file quarterly — the invoice will not appear in the current
     # monthly 2B pull, so P(appears now) is low even for a reliable vendor.

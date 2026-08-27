@@ -19,11 +19,12 @@ async function post<T>(path: string, body: unknown): Promise<T> {
 }
 
 export interface Summary {
-  company: { name: string; gstin: string };
-  batch: { claims: number; exceptions: number; paid: number; held: number };
+  company: { name: string; gstin: string; registrations: { state_code: string; state_name: string; gstin: string }[] };
+  batch: { claims: number; exceptions: number; paid: number; held: number; overclaim_claims: number };
   money: {
-    recovered: number; lost_wrong_entity: number; blocked_17_5: number;
-    at_risk_chase: number; total_gst: number;
+    recoverable: number; structurally_dead: number; overclaimed: number;
+    at_risk_chase: number; fixable_wrong_gstin: number; state_trapped: number;
+    blocked_17_5: number; lost_wrong_entity: number; total_gst: number;
   };
   reissue_candidates: number;
   decisions: Record<string, number>;
@@ -59,6 +60,8 @@ export interface Metrics {
   false_block_count: number; false_block_cost: number;
   exception_rate: number; exception_count: number;
   section_17_5?: { precision: number; recall: number; tp: number; fp: number; fn: number };
+  state_trapped?: { precision: number; recall: number };
+  overclaim?: { exposure: number; interest_24pc_yr: number; claims: number; detection_recall: number };
   extraction: any; throughput: any;
   triage_deltas: any[];
 }
@@ -83,6 +86,8 @@ export const api = {
   approve: (id: string) => post<any>(`/api/compliance/proposals/${id}/approve`, {}),
   reject: (id: string) => post<any>(`/api/compliance/proposals/${id}/reject`, {}),
   evalExtraction: (sample = 0) => post<any>("/api/eval/extraction?sample=" + sample, {}),
+  overclaim: () => get<Overclaim>("/api/overclaim"),
+  registrationRoi: () => get<RegistrationRoi>("/api/registration-roi"),
   run: (body: { fail_payout?: boolean; gsp_down?: boolean; regenerate?: boolean }) =>
     post<any>("/api/run", body),
   reevaluate: (body: { rule_id?: string; block_category?: string; note?: string }) =>
@@ -91,6 +96,15 @@ export const api = {
 
 export interface Draft {
   kind: string; subject: string; english: string; hinglish: string; source: string;
+}
+export interface Overclaim {
+  exposure: number; interest_24pc_yr: number; claims: number;
+  breakdown: { label: string; amount: number; claims: number }[];
+}
+export interface RegistrationRoi {
+  registered_states: { code: string; name: string }[];
+  cost_per_registration_yr: number; total_trapped: number;
+  by_state: { state_code: string; state_name: string; trapped: number; net_if_registered: number; worth_it: boolean }[];
 }
 export interface Proposal {
   id: string; source_title: string; source_excerpt: string; source_url: string;

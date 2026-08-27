@@ -11,7 +11,7 @@ from sqlmodel import select
 
 from .config import settings
 from .db import get_session
-from .domain import Decision, RECOVERABLE_DECISIONS
+from .domain import Decision, DEAD_DECISIONS, RECOVERABLE_DECISIONS
 from .models import AuditEvent, Claim, Invoice, Payout, TwoBLine, Vendor, Verdict
 
 RUN_SUMMARY_PATH = settings.db_path.parent / "run_summary.json"
@@ -47,8 +47,10 @@ def get_summary() -> dict:
         lines = s.exec(select(TwoBLine)).all()
 
     n = len(claims)
-    money = {"recovered": 0.0, "lost_wrong_entity": 0.0, "blocked_17_5": 0.0,
-             "at_risk_chase": 0.0, "total_gst": 0.0}
+    # Three fates (PRD v2): recoverable / structurally dead / wrongly claimed.
+    money = {"recoverable": 0.0, "structurally_dead": 0.0, "overclaimed": 0.0,
+             "at_risk_chase": 0.0, "fixable_wrong_gstin": 0.0, "state_trapped": 0.0,
+             "blocked_17_5": 0.0, "lost_wrong_entity": 0.0, "total_gst": 0.0}
     decisions: dict[str, int] = {}
     tiers = {0: 0, 1: 0, 2: 0, 3: 0}
     reissue = 0
@@ -59,28 +61,48 @@ def get_summary() -> dict:
         if not v:
             continue
         decisions[v.decision.value] = decisions.get(v.decision.value, 0) + 1
-        money["total_gst"] += v.tax_at_stake
+        tax = v.tax_at_stake
+        money["total_gst"] += tax
         if v.decision in RECOVERABLE_DECISIONS:
-            money["recovered"] += v.tax_at_stake
-            if v.predicted_recoverable_p < settings.intervene_p_below:
-                money["at_risk_chase"] += v.tax_at_stake
-        elif v.decision == Decision.UNRECOVERABLE_WRONG_ENTITY:
-            money["lost_wrong_entity"] += v.tax_at_stake
-            reissue += 1
-        elif v.decision == Decision.BLOCKED_17_5:
-            money["blocked_17_5"] += v.tax_at_stake
+            money["recoverable"] += tax
+            if v.predicted_recoverable_p < settings.intervene_p_below and v.decision != Decision.WRONG_GSTIN_USED:
+                money["at_risk_chase"] += tax
+            if v.decision == Decision.WRONG_GSTIN_USED:
+                money["fixable_wrong_gstin"] += tax
+                reissue += 1
+        elif v.decision in DEAD_DECISIONS:
+            if c.already_claimed:
+                money["overclaimed"] += tax          # dead AND already claimed → owe back
+            else:
+                money["structurally_dead"] += tax    # dead, correctly not claimed
+            if v.decision == Decision.STATE_TRAPPED:
+                money["state_trapped"] += tax
+            elif v.decision == Decision.BLOCKED_17_5:
+                money["blocked_17_5"] += tax
+            elif v.decision == Decision.UNRECOVERABLE_WRONG_ENTITY:
+                money["lost_wrong_entity"] += tax
+                reissue += 1
 
     money = {k: round(val, 2) for k, val in money.items()}
     paid = sum(1 for p in payouts.values() if p.status.value in ("paid", "reconciled"))
     matched = sum(1 for l in lines if l.matched_claim_id)
 
+    overclaim_claims = sum(1 for c in claims
+                           if c.already_claimed and verdicts.get(c.claim_id)
+                           and verdicts[c.claim_id].decision in DEAD_DECISIONS)
+
     run = _run_summary()
     return {
-        "company": {"name": settings.company_name, "gstin": settings.company_gstin},
+        "company": {
+            "name": settings.company_name, "gstin": settings.company_gstin,
+            "registrations": [{"state_code": r["state_code"], "state_name": r["state_name"],
+                               "gstin": r["gstin"]} for r in settings.company_registrations],
+        },
         "batch": {
             "claims": n,
             "exceptions": decisions.get("EXCEPTION", 0),
             "paid": paid,
+            "overclaim_claims": overclaim_claims,
             "held": sum(1 for c in claims if c.status.value == "exception") - decisions.get("EXCEPTION", 0),
         },
         "money": money,
@@ -157,7 +179,7 @@ def get_claim_detail(claim_id: str) -> Optional[dict]:
             "amount_gross": claim.amount_gross, "description": claim.description,
             "status": claim.status.value, "tier": claim.tier,
             "expected_value_score": claim.expected_value_score,
-            "receipt_path": claim.receipt_path,
+            "receipt_path": claim.receipt_path, "already_claimed": claim.already_claimed,
         },
         "invoice": _invoice_dict(inv) if inv else None,
         "verdicts": [_verdict_dict(v) for v in verdicts],
@@ -202,12 +224,18 @@ def list_audit(limit: int = 200) -> list[dict]:
 # --- serializers ----------------------------------------------------------
 
 def _invoice_dict(i: Invoice) -> dict:
+    from .config import STATE_NAMES
     return {"supplier_gstin": i.supplier_gstin, "supplier_name": i.supplier_name,
             "invoice_no": i.invoice_no, "invoice_date": i.invoice_date,
             "taxable_value": i.taxable_value, "cgst": i.cgst, "sgst": i.sgst, "igst": i.igst,
             "total_tax": i.total_tax, "buyer_gstin": i.buyer_gstin, "buyer_name": i.buyer_name,
             "extraction_confidence": i.extraction_confidence,
-            "extraction_method": i.extraction_method.value}
+            "extraction_method": i.extraction_method.value,
+            "supplier_state_code": i.supplier_state_code,
+            "supplier_state": STATE_NAMES.get(i.supplier_state_code or "", i.supplier_state_code),
+            "place_of_supply_state": i.place_of_supply_state,
+            "place_of_supply": STATE_NAMES.get(i.place_of_supply_state or "", i.place_of_supply_state),
+            "tax_type": i.tax_type}
 
 
 def _verdict_dict(v: Verdict) -> dict:

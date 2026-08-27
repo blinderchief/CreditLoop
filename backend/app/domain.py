@@ -46,16 +46,53 @@ class Decision(str, Enum):
     """The verdict on whether the GST comes back. Only the deterministic engine
     may emit these — an LLM never sets a Decision."""
 
-    RECOVERABLE = "RECOVERABLE"                       # all four ITC conditions look met
+    RECOVERABLE = "RECOVERABLE"                       # all ITC conditions look met
+    RECOVERABLE_IGST = "RECOVERABLE_IGST"             # cross-state but IGST → follows the recipient
     PROVISIONAL = "PROVISIONAL"                       # decided under uncertainty (GSP down, etc.)
     PENDING_QRMP = "PENDING_QRMP"                      # supplier files quarterly; 2B will lag
-    UNRECOVERABLE_WRONG_ENTITY = "UNRECOVERABLE_WRONG_ENTITY"  # invoice not in company GSTIN
+    WRONG_GSTIN_USED = "WRONG_GSTIN_USED"             # right POS state, wrong company GSTIN — FIXABLE
+    UNRECOVERABLE_WRONG_ENTITY = "UNRECOVERABLE_WRONG_ENTITY"  # invoice not in any company GSTIN
+    STATE_TRAPPED = "STATE_TRAPPED"                    # place of supply is a state we're not registered in
     BLOCKED_17_5 = "BLOCKED_17_5"                      # Section 17(5) blocked credit
     EXCEPTION = "EXCEPTION"                            # agent refused to decide
 
 
-# Decisions that mean "the money comes back" for the counter.
-RECOVERABLE_DECISIONS = {Decision.RECOVERABLE, Decision.PROVISIONAL, Decision.PENDING_QRMP}
+# --- Three fates (PRD v2 §1). Every decided claim lands in exactly one. -----
+# RECOVERABLE  — credit is available (or becomes available once a fixable
+#                mistake is corrected); claim it.
+# STRUCTURALLY_DEAD — credit never existed; no action creates it. Book as cost,
+#                do NOT claim. (Claiming it anyway is the overclaim trap.)
+RECOVERABLE_DECISIONS = {
+    Decision.RECOVERABLE, Decision.RECOVERABLE_IGST, Decision.PROVISIONAL,
+    Decision.PENDING_QRMP, Decision.WRONG_GSTIN_USED,
+}
+DEAD_DECISIONS = {
+    Decision.STATE_TRAPPED, Decision.BLOCKED_17_5, Decision.UNRECOVERABLE_WRONG_ENTITY,
+}
+# Fixable within the recoverable set — worth an intervention (reissue).
+FIXABLE_DECISIONS = {Decision.WRONG_GSTIN_USED, Decision.UNRECOVERABLE_WRONG_ENTITY}
+
+
+class PlaceOfSupply(str, Enum):
+    """Where a supply *legally happens* decides which state's tax it carries."""
+
+    LOCATION_OF_SUPPLY = "LOCATION_OF_SUPPLY"        # you had to be there → trapped in that state
+    LOCATION_OF_RECIPIENT = "LOCATION_OF_RECIPIENT"  # it came to you → credit follows you
+
+
+# Category → place-of-supply rule. "If you had to physically be somewhere to
+# consume it, the credit is stuck in that state; if it came to you, it follows
+# you." (s.12 IGST Act; CBIC 2019 clarification; multiple AAR rulings.)
+POS_BY_CATEGORY = {
+    ExpenseCategory.HOTEL: PlaceOfSupply.LOCATION_OF_SUPPLY,
+    ExpenseCategory.CAB: PlaceOfSupply.LOCATION_OF_SUPPLY,
+    ExpenseCategory.MEALS: PlaceOfSupply.LOCATION_OF_SUPPLY,      # also blocked u/s 17(5)
+    ExpenseCategory.COWORKING: PlaceOfSupply.LOCATION_OF_SUPPLY,  # venue / immovable property
+    ExpenseCategory.SAAS: PlaceOfSupply.LOCATION_OF_RECIPIENT,
+    ExpenseCategory.EQUIPMENT: PlaceOfSupply.LOCATION_OF_RECIPIENT,
+    ExpenseCategory.TELECOM: PlaceOfSupply.LOCATION_OF_RECIPIENT,
+    ExpenseCategory.FLIGHT: PlaceOfSupply.LOCATION_OF_RECIPIENT,
+}
 
 
 class ReasonCode(str, Enum):
@@ -70,6 +107,7 @@ class ReasonCode(str, Enum):
     NO_RULE_MATCH = "NO_RULE_MATCH"                          # no rule covers this category
     DUPLICATE_CLAIM = "DUPLICATE_CLAIM"                      # same invoice already seen
     CONTESTED_RULE = "CONTESTED_RULE"                        # rule is contested -> provisional, not auto-block
+    OVERCLAIM_RISK = "OVERCLAIM_RISK"                        # dead credit that was already claimed in 3B
 
 
 class FilingFrequency(str, Enum):

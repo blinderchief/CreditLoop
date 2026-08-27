@@ -23,7 +23,13 @@ from datetime import date, datetime, timedelta, timezone
 
 from .config import settings
 from .db import get_session, reset_db
-from .domain import ExpenseCategory, ExtractionMethod, FilingFrequency
+from .domain import (
+    ExpenseCategory,
+    ExtractionMethod,
+    FilingFrequency,
+    POS_BY_CATEGORY,
+    PlaceOfSupply,
+)
 from .gstin import make_valid_gstin
 from .log import banner, console, log, rupees, step
 from .models import Claim, Invoice, TwoBLine, Vendor
@@ -74,29 +80,51 @@ CATEGORY_META: dict[ExpenseCategory, dict] = {
 }
 
 ARCHETYPES = ["compliant", "qrmp", "erratic", "never"]
-COMPANY_STATE = settings.company_state_code  # "29"
-OTHER_STATES = ["27", "07", "06", "33", "24", "36", "19", "09"]  # MH, DL, HR, TN, GJ, TG, WB, UP
+COMPANY_STATE = settings.company_state_code  # "29" Karnataka (primary)
+REGISTERED_STATES = sorted(settings.registered_states)          # ["27","29"]
+NONREG_STATES = ["07", "33", "24", "19", "09", "06", "23"]       # DL, TN, GJ, WB, UP, HR, MP
+OTHER_STATES = ["27", "07", "06", "33", "24", "36", "19", "09"]
+
+# Place-of-supply category groups (PRD v2).
+SUPPLY_CATS = [c for c in ExpenseCategory if POS_BY_CATEGORY[c] == PlaceOfSupply.LOCATION_OF_SUPPLY
+               and c != ExpenseCategory.MEALS]   # hotel, cab, coworking (meals is 17(5))
+RECIPIENT_CATS = [c for c in ExpenseCategory if POS_BY_CATEGORY[c] == PlaceOfSupply.LOCATION_OF_RECIPIENT]
 
 # The batch we reconcile against.
 RETURN_PERIOD = "072026"
 BATCH_MONTH_START = date(2026, 7, 1)
 BATCH_MONTH_END = date(2026, 7, 28)
 
-# Scenario mix -> counts (sums to n_claims=200).
+# Scenario mix -> counts (sums to n_claims=200). PRD v2 adds the state-trap,
+# wrong-GSTIN (fixable), IGST-recoverable, and overclaim cases.
 SCENARIO_COUNTS = {
-    "clean_compliant": 30,
-    "clean_qrmp": 12,
-    "clean_erratic": 10,
-    "clean_never": 8,
-    "wrong_entity": 60,       # ~30%
-    "missing_gstin": 30,      # ~15%
-    "blocked_175": 20,        # ~10%
-    "arithmetic_mismatch": 6,
-    "duplicate": 5,
+    # recoverable (place-of-supply-safe: recipient-located or registered state)
+    "clean_compliant": 22,
+    "clean_qrmp": 10,
+    "clean_erratic": 8,
+    "clean_never": 6,
     "amount_mismatch_2b": 3,
+    "recoverable_igst": 14,      # cross-state SaaS/equipment → IGST, claimable
+    "karnataka_hotel": 6,        # in-state hotel → claimable (not all hotels are dead)
+    # the state trap
+    "state_trapped": 24,         # out-of-state accommodation/cab/coworking → dead
+    "wrong_gstin_used": 10,      # right state, wrong company GSTIN → FIXABLE
+    "overclaim_trapped": 12,     # state-trapped AND already claimed → owe back + interest
+    # existing hard / exception cases
+    "wrong_entity": 30,
+    "missing_gstin": 16,
+    "blocked_175": 16,
+    "arithmetic_mismatch": 5,
+    "duplicate": 4,
     "low_confidence": 6,
-    "invalid_gstin": 5,
-    "inactive_gstin": 5,
+    "invalid_gstin": 4,
+    "inactive_gstin": 4,
+}
+
+# Scenarios that must reach the recoverable fallthrough → force recipient-located
+# categories so place-of-supply never traps them.
+RECIPIENT_ONLY_SCENARIOS = {
+    "clean_compliant", "clean_qrmp", "clean_erratic", "clean_never", "amount_mismatch_2b",
 }
 
 
@@ -210,6 +238,24 @@ def _vendor_category(vendor: Vendor) -> ExpenseCategory:
     return ExpenseCategory.EQUIPMENT
 
 
+def _branch_vendor(branch_map: dict, cat: ExpenseCategory, state: str) -> Vendor:
+    """A state-branch supplier: the same chain registered in `state` has its own
+    GSTIN. Deterministic per (category, state) so the set is reproducible, and
+    added to the vendor table so reliability + 2B matching stay consistent."""
+    key = (cat, state)
+    if key in branch_map:
+        return branch_map[key]
+    names = VENDOR_NAMES[cat]
+    name = names[sum(ord(c) for c in state) % len(names)]
+    seed = "".join(c for c in name.upper() if c.isalpha())[:5] or "ACMEX"
+    gstin = make_valid_gstin(state, seed, entity="1")
+    v = Vendor(gstin=gstin, legal_name=name, filing_frequency=FilingFrequency.MONTHLY,
+               gstr1_filing_history=["052026", "062026", "072026"], reliability_score=0.96,
+               active=True, observation_count=0, last_refreshed_at=_now())
+    branch_map[key] = v
+    return v
+
+
 # Scenarios that must stay recoverable, so they may never land on meals (which
 # is always blocked u/s 17(5)).
 NO_MEALS_SCENARIOS = {
@@ -218,144 +264,158 @@ NO_MEALS_SCENARIOS = {
 
 
 def build_claims(vendors: list[Vendor], rng: random.Random):
-    """Returns (claims, invoices, ground_truth, seen_invoices) — 2B built later."""
+    """Returns (claims, invoices, ground_truth, branch_vendors)."""
     claims: list[Claim] = []
     invoices: list[Invoice] = []
     truth: list[dict] = []
+    branch_map: dict = {}   # (category, state) -> state-branch Vendor
 
-    # Flatten the scenario plan into a shuffled list so employees/dates vary.
     plan: list[str] = []
     for scen, n in SCENARIO_COUNTS.items():
         plan += [scen] * n
     assert len(plan) == settings.n_claims, f"plan={len(plan)} != {settings.n_claims}"
     rng.shuffle(plan)
-    # Duplicates must be processed AFTER their clean source, so move them last.
     plan = [s for s in plan if s != "duplicate"] + [s for s in plan if s == "duplicate"]
 
-    duplicate_source: dict = {}  # holds one invoice to clone for the 'duplicate' scenario
+    duplicate_source: dict = {}
+    kar_gstin = settings.gstin_for_state("29")   # primary registration
 
     for scen in plan:
         emp_id, emp_name = rng.choice(EMPLOYEES)
+        buyer_gstin = kar_gstin
+        buyer_name = settings.company_name
+        already_claimed = False
 
-        # Choose vendor + category so each scenario isolates exactly one failure.
+        # ---- category + supplier (state matters now) --------------------
         if scen == "inactive_gstin":
-            # pick a cancelled-registration vendor first, derive its category
-            inactive_pool = [v for v in vendors if not v.active]
-            vendor = rng.choice(inactive_pool)
+            vendor = rng.choice([v for v in vendors if not v.active])
             cat = _vendor_category(vendor)
+        elif scen in ("state_trapped", "overclaim_trapped"):
+            cat = rng.choice(SUPPLY_CATS)
+            vendor = _branch_vendor(branch_map, cat, rng.choice(NONREG_STATES))
+            already_claimed = scen == "overclaim_trapped"
+        elif scen == "wrong_gstin_used":
+            cat = rng.choice(SUPPLY_CATS)
+            vendor = _branch_vendor(branch_map, cat, "27")   # Maharashtra: we ARE registered
+        elif scen == "karnataka_hotel":
+            cat = rng.choice(SUPPLY_CATS)
+            vendor = _branch_vendor(branch_map, cat, "29")
+        elif scen == "recoverable_igst":
+            cat = rng.choice(RECIPIENT_CATS)
+            vendor = _branch_vendor(branch_map, cat, rng.choice(NONREG_STATES))
         else:
             if scen == "blocked_175":
                 cat = ExpenseCategory.MEALS
-            elif scen in NO_MEALS_SCENARIOS:
-                cat = rng.choice([c for c in ExpenseCategory if c != ExpenseCategory.MEALS])
+            elif scen in RECIPIENT_ONLY_SCENARIOS:
+                cat = rng.choice(RECIPIENT_CATS)
             else:
                 cat = rng.choice([c for c in ExpenseCategory if c != ExpenseCategory.MEALS] +
                                  [ExpenseCategory.MEALS])
-            arche = {
-                "clean_compliant": "compliant", "clean_qrmp": "qrmp",
-                "clean_erratic": "erratic", "clean_never": "never",
-                "amount_mismatch_2b": "compliant",
-            }.get(scen)
-            # every non-inactive scenario uses an ACTIVE supplier, so its own
-            # failure (wrong entity, arithmetic, ...) is what the engine catches.
+            arche = {"clean_compliant": "compliant", "clean_qrmp": "qrmp",
+                     "clean_erratic": "erratic", "clean_never": "never",
+                     "amount_mismatch_2b": "compliant"}.get(scen)
             vendor = _pick_vendor(vendors, cat, arche, rng, active=True)
 
+        supplier_gstin = vendor.gstin
+        supplier_state = supplier_gstin[:2]
         meta = CATEGORY_META[cat]
         gross = round(rng.uniform(meta["lo"], meta["hi"]), 2)
         rate = meta["rate"]
         taxable = round(gross / (1 + rate / 100), 2)
-        intra = vendor.gstin[:2] == COMPANY_STATE
+
+        # tax split: supply-located is always CGST+SGST of the supply state;
+        # recipient-located is IGST when the supplier isn't in our state.
+        if POS_BY_CATEGORY[cat] == PlaceOfSupply.LOCATION_OF_SUPPLY:
+            intra = True
+        else:
+            intra = supplier_state == COMPANY_STATE
         cgst, sgst, igst = _split_tax(taxable, rate, intra)
         inv_date = BATCH_MONTH_START + timedelta(days=rng.randint(0, 27))
         inv_no = f"{vendor.legal_name[:3].upper()}/{RETURN_PERIOD}/{rng.randint(1000, 9999)}"
-
-        # defaults: invoice billed correctly to the company
-        supplier_gstin = vendor.gstin
-        buyer_gstin = settings.company_gstin
-        buyer_name = settings.company_name
         confidence = round(rng.uniform(0.9, 0.99), 3)
-        method = ExtractionMethod.SYNTHETIC_TRUTH
         in_2b = False
-        two_b_amount = taxable  # may be perturbed for amount_mismatch_2b
+        two_b_amount = taxable
 
-        # --- scenario-specific mutations ---------------------------------
+        # ---- expected decision + mutations ------------------------------
         if scen in ("clean_compliant", "clean_erratic", "clean_never"):
-            expected_decision = "RECOVERABLE"
+            expected_decision = "RECOVERABLE_IGST" if igst > 0 else "RECOVERABLE"
             in_2b = rng.random() < vendor.reliability_score
         elif scen == "clean_qrmp":
             expected_decision = "PENDING_QRMP"
-            in_2b = False  # lags out of the monthly pull
         elif scen == "amount_mismatch_2b":
-            expected_decision = "RECOVERABLE"
+            expected_decision = "RECOVERABLE_IGST" if igst > 0 else "RECOVERABLE"
             in_2b = True
-            two_b_amount = round(taxable * rng.uniform(0.8, 0.92), 2)  # 2B says less
+            two_b_amount = round(taxable * rng.uniform(0.8, 0.92), 2)
+        elif scen == "recoverable_igst":
+            expected_decision = "RECOVERABLE_IGST"
+            in_2b = rng.random() < 0.9
+        elif scen == "karnataka_hotel":
+            expected_decision = "RECOVERABLE"
+            in_2b = rng.random() < 0.9
+        elif scen in ("state_trapped", "overclaim_trapped"):
+            expected_decision = "STATE_TRAPPED"
+        elif scen == "wrong_gstin_used":
+            expected_decision = "WRONG_GSTIN_USED"
         elif scen == "wrong_entity":
             buyer_gstin = None
-            buyer_name = emp_name  # billed to the employee personally
+            buyer_name = emp_name
             expected_decision = "UNRECOVERABLE_WRONG_ENTITY"
         elif scen == "missing_gstin":
             supplier_gstin = None
             expected_decision = "EXCEPTION:MISSING_GSTIN"
         elif scen == "blocked_175":
             expected_decision = "BLOCKED_17_5"
-            in_2b = rng.random() < vendor.reliability_score  # may still appear, still blocked
+            in_2b = rng.random() < vendor.reliability_score
+            already_claimed = rng.random() < 0.35   # restaurant bills claimed despite 17(5)
         elif scen == "arithmetic_mismatch":
-            # break the arithmetic: gross no longer equals taxable + tax
             gross = round(gross + rng.uniform(200, 900), 2)
             expected_decision = "EXCEPTION:ARITHMETIC_MISMATCH"
         elif scen == "invalid_gstin":
-            # corrupt the checksum digit
-            bad = supplier_gstin[:14] + ("A" if supplier_gstin[14] != "A" else "B")
-            supplier_gstin = bad
+            supplier_gstin = supplier_gstin[:14] + ("A" if supplier_gstin[14] != "A" else "B")
             expected_decision = "EXCEPTION:INVALID_GSTIN"
         elif scen == "inactive_gstin":
             expected_decision = "EXCEPTION:GSTIN_NOT_ACTIVE"
         elif scen == "low_confidence":
-            confidence = round(rng.uniform(0.2, 0.45), 3)  # unreadable receipt
+            confidence = round(rng.uniform(0.2, 0.45), 3)
             expected_decision = "EXCEPTION:LOW_EXTRACTION_CONFIDENCE"
         elif scen == "duplicate":
             expected_decision = "EXCEPTION:DUPLICATE_CLAIM"
             if duplicate_source:
-                # clone the identifying fields of an earlier clean invoice
                 supplier_gstin = duplicate_source["supplier_gstin"]
                 inv_no = duplicate_source["invoice_no"]
                 inv_date = date.fromisoformat(duplicate_source["invoice_date"])
-                vendor = next(v for v in vendors if v.gstin == supplier_gstin)
         else:
             expected_decision = "RECOVERABLE"
 
         claim = Claim(
             seq=len(claims), employee_id=emp_id, employee_name=emp_name, amount_gross=gross,
             category=cat, description=f"{cat.value} — {vendor.legal_name.split(' (')[0]}",
-            submitted_at=_now(),
+            submitted_at=_now(), already_claimed=already_claimed,
         )
         invoice = Invoice(
             claim_id=claim.claim_id, supplier_gstin=supplier_gstin,
             supplier_name=vendor.legal_name, invoice_no=inv_no, invoice_date=_iso(inv_date),
             taxable_value=taxable, cgst=cgst, sgst=sgst, igst=igst,
             buyer_gstin=buyer_gstin, buyer_name=buyer_name,
-            extraction_confidence=confidence, extraction_method=method,
+            extraction_confidence=confidence, extraction_method=ExtractionMethod.SYNTHETIC_TRUTH,
+            supplier_state_code=(supplier_gstin[:2] if supplier_gstin else None),
         )
         claims.append(claim)
         invoices.append(invoice)
 
-        # remember one clean invoice to clone as a duplicate later
         if scen == "clean_compliant" and not duplicate_source:
-            duplicate_source = {
-                "supplier_gstin": supplier_gstin, "invoice_no": inv_no,
-                "invoice_date": _iso(inv_date),
-            }
+            duplicate_source = {"supplier_gstin": supplier_gstin, "invoice_no": inv_no,
+                                "invoice_date": _iso(inv_date)}
 
         truth.append({
-            "claim_id": claim.claim_id, "scenario": scen,
-            "expected_decision": expected_decision,
+            "claim_id": claim.claim_id, "scenario": scen, "expected_decision": expected_decision,
             "in_2b": in_2b, "tax_amount": round(cgst + sgst + igst, 2),
             "two_b_taxable": round(two_b_amount, 2) if in_2b else None,
-            "supplier_gstin": supplier_gstin, "invoice_no": inv_no,
-            "invoice_date": _iso(inv_date),
+            "supplier_gstin": supplier_gstin, "invoice_no": inv_no, "invoice_date": _iso(inv_date),
+            "already_claimed": already_claimed, "supplier_state": supplier_state,
         })
 
-    return claims, invoices, truth
+    return claims, invoices, truth, list(branch_map.values())
 
 
 # --- Ground-truth 2B ------------------------------------------------------
@@ -384,11 +444,16 @@ def generate() -> dict:
              settings.seed, settings.company_name, settings.company_gstin)
 
     vendors = build_vendors(rng)
-    claims, invoices, truth = build_claims(vendors, rng)
+    claims, invoices, truth, branch_vendors = build_claims(vendors, rng)
     two_b = build_two_b(truth)
+    # A state-branch GSTIN can coincide with a base vendor's — dedupe, base wins.
+    uniq: dict[str, Vendor] = {v.gstin: v for v in vendors}
+    for v in branch_vendors:
+        uniq.setdefault(v.gstin, v)
+    all_vendors = list(uniq.values())
 
     with get_session() as s:
-        for v in vendors:
+        for v in all_vendors:
             s.add(v)
         for c in claims:
             s.add(c)
@@ -406,7 +471,7 @@ def generate() -> dict:
 
     _report(vendors, claims, invoices, truth, two_b)
     return {
-        "vendors": len(vendors), "claims": len(claims), "invoices": len(invoices),
+        "vendors": len(all_vendors), "claims": len(claims), "invoices": len(invoices),
         "two_b_lines": len(two_b), "ground_truth": str(gt_path),
     }
 
@@ -427,6 +492,8 @@ def _report(vendors, claims, invoices, truth, two_b) -> None:
     at_risk_wrong = sum(t["tax_amount"] for t in truth
                         if t["expected_decision"] == "UNRECOVERABLE_WRONG_ENTITY")
     blocked = sum(t["tax_amount"] for t in truth if t["expected_decision"] == "BLOCKED_17_5")
+    trapped = sum(t["tax_amount"] for t in truth if t["expected_decision"] == "STATE_TRAPPED")
+    overclaim = sum(t["tax_amount"] for t in truth if t.get("already_claimed"))
 
     banner("Dataset built", f"{len(claims)} claims · {len(vendors)} vendors · {len(two_b)} 2B lines")
 
@@ -443,6 +510,8 @@ def _report(vendors, claims, invoices, truth, two_b) -> None:
     console.print(tbl2)
 
     console.print(f"\n  Total GST across batch : [loop.money]{rupees(total_tax)}[/]")
+    console.print(f"  State-trapped (dead)   : [loop.risk]{rupees(trapped)}[/]")
+    console.print(f"  Overclaimed (owe back) : [loop.loss]{rupees(overclaim)}[/]")
     console.print(f"  Lost to wrong entity   : [loop.loss]{rupees(at_risk_wrong)}[/]")
     console.print(f"  Blocked u/s 17(5)      : [loop.risk]{rupees(blocked)}[/]")
     console.print(f"  Ground-truth 2B lines  : {len(two_b)}")

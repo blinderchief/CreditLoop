@@ -39,6 +39,7 @@ class Rule(BaseModel):
     approved_by: str = ""
     status: RuleStatus = RuleStatus.SETTLED
     confidence: str = "settled"
+    place_of_supply_rule: Optional[str] = None   # LOCATION_OF_SUPPLY | LOCATION_OF_RECIPIENT
 
 
 # --- The seeded law -------------------------------------------------------
@@ -106,6 +107,25 @@ DEFAULT_RULES: list[Rule] = [
         source_citation="CGST Act s.17(5)(b)",
         source_url="https://cleartax.in/s/section-175-of-cgst-act",
         approved_by="ca_review_2026_03_11", effective_from="2025-07-01",
+    ),
+    Rule(
+        rule_id="POS_STATE_REGISTERED", version=1, check="registered_in_pos_state",
+        verdict="STATE_TRAPPED",
+        condition="place-of-supply state IN company's registered states",
+        exception="only supply-located categories (hotel, cab, meals, coworking) can be trapped",
+        source_citation="Section 12(3)/12(9), IGST Act 2017; CBIC clarification 2019; multiple AAR rulings",
+        source_url="https://cbic-gst.gov.in",
+        place_of_supply_rule="LOCATION_OF_SUPPLY",
+        approved_by="ca_review_2026_03_11", effective_from="2017-07-01",
+    ),
+    Rule(
+        rule_id="POS_CORRECT_GSTIN", version=1, check="correct_state_gstin",
+        verdict="WRONG_GSTIN_USED",
+        condition="buyer GSTIN's state == place-of-supply state",
+        exception="fixable — reissue against the correct state's registration",
+        source_citation="Section 16(2), CGST Act — credit belongs to the registration that bore the tax",
+        place_of_supply_rule="LOCATION_OF_SUPPLY",
+        approved_by="ca_review_2026_03_11", effective_from="2017-07-01",
     ),
     Rule(
         rule_id="QRMP_TIMING", version=1, check="supplier_files_monthly",

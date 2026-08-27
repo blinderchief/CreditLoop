@@ -22,6 +22,8 @@ from .domain import (
     ClaimStatus,
     Decision,
     FilingFrequency,
+    PlaceOfSupply,
+    POS_BY_CATEGORY,
     RECOVERABLE_DECISIONS,
 )
 from .engine import EvalContext, VerdictResult, evaluate
@@ -83,12 +85,25 @@ def process_claim(session, claim: Claim, invoice: Invoice, gsp: GspClient,
             else:
                 gsp_unverified = True   # degrade to PROVISIONAL, never block payout
 
+    # Place of supply — free from the GSTIN's first two digits + the category.
+    pos_rule = POS_BY_CATEGORY.get(claim.category, PlaceOfSupply.LOCATION_OF_RECIPIENT)
+    location_of_supply = pos_rule == PlaceOfSupply.LOCATION_OF_SUPPLY
+    supplier_state = (ext.supplier_gstin or "")[:2] or None
+    pos_state = supplier_state if location_of_supply else settings.company_state_code
+    # record the derived POS facts back on the invoice (audit + dashboard)
+    invoice.supplier_state_code = supplier_state
+    invoice.place_of_supply_state = pos_state
+    invoice.tax_type = "IGST" if ext.igst > 0 else "CGST_SGST"
+    session.add(invoice)
+
     ctx = EvalContext(
         amount_gross=claim.amount_gross, category=claim.category,
         taxable_value=ext.taxable_value, cgst=ext.cgst, sgst=ext.sgst, igst=ext.igst,
         supplier_gstin=ext.supplier_gstin, buyer_gstin=ext.buyer_gstin, invoice_no=ext.invoice_no,
         extraction_confidence=ext.confidence, vendor_active=vendor_active,
         vendor_filing_frequency=filing_freq, seen_keys=seen_keys, gsp_unverified=gsp_unverified,
+        company_gstins=settings.company_gstins, registered_states=settings.registered_states,
+        pos_location_of_supply=location_of_supply,
     )
     vr: VerdictResult = evaluate(ctx)
 

@@ -30,18 +30,24 @@ export type DecisionKind =
 // tone: which colour a decision speaks in
 export const decisionTone: Record<string, "money" | "risk" | "loss" | "muted"> = {
   RECOVERABLE: "money",
+  RECOVERABLE_IGST: "money",
   PROVISIONAL: "risk",
   PENDING_QRMP: "risk",
+  WRONG_GSTIN_USED: "risk",
   UNRECOVERABLE_WRONG_ENTITY: "loss",
+  STATE_TRAPPED: "muted",
   BLOCKED_17_5: "loss",
   EXCEPTION: "risk",
 };
 
 export const decisionLabel: Record<string, string> = {
   RECOVERABLE: "Recoverable",
+  RECOVERABLE_IGST: "Recoverable (IGST)",
   PROVISIONAL: "Provisional",
   PENDING_QRMP: "Pending (QRMP)",
+  WRONG_GSTIN_USED: "Wrong GSTIN — fixable",
   UNRECOVERABLE_WRONG_ENTITY: "Wrong entity",
+  STATE_TRAPPED: "State-trapped — dead",
   BLOCKED_17_5: "Blocked 17(5)",
   EXCEPTION: "Exception",
 };

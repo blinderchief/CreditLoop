@@ -159,6 +159,29 @@ def eval_extraction(sample: int = 0) -> dict:
     return run_extraction_eval(sample=sample or None)
 
 
+# --- Place-of-supply insights (PRD v2 §4) --------------------------------
+
+@app.get("/api/overclaim")
+def overclaim() -> dict:
+    """Dead credit already claimed in GSTR-3B → owed back + 24% interest."""
+    from .insights import overclaim_report
+    return overclaim_report()
+
+
+@app.get("/api/registration-roi")
+def registration_roi() -> dict:
+    """Trapped credit by state — which new registration pays for itself."""
+    from .insights import registration_roi as roi
+    return roi()
+
+
+@app.get("/api/gstin-picker")
+def gstin_picker(state: str, category: str) -> dict:
+    """Before booking: which GSTIN should the employee put on the bill?"""
+    from .insights import gstin_picker as pick
+    return pick(state, category)
+
+
 # --- action endpoints -----------------------------------------------------
 
 class RunRequest(BaseModel):

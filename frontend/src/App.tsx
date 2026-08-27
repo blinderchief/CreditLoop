@@ -9,6 +9,7 @@ import { ClaimDrawer } from "./components/ClaimDrawer";
 import { Metrics } from "./components/Metrics";
 import { Vendors } from "./components/Vendors";
 import { Compliance } from "./components/Compliance";
+import { OverclaimPanel, RegistrationRoiPanel } from "./components/Insights";
 import { Mark } from "./components/Logo";
 import { Card, Badge, Spinner, SectionHead } from "./components/ui";
 
@@ -56,9 +57,12 @@ export function App() {
               </div>
             )}
             {summary && (
-              <div className="hidden sm:block">
+              <div className="hidden sm:block text-right">
                 <div className="text-[11px] text-muted">{summary.company.name}</div>
-                <div className="font-mono text-[11px] text-muted">{summary.company.gstin}</div>
+                <div className="font-mono text-[11px] text-muted">
+                  {(summary.company.registrations ?? []).map((r) => r.state_name).join(" · ")}
+                  {" "}({(summary.company.registrations ?? []).length} GSTINs)
+                </div>
               </div>
             )}
             {summary?.failure_flags?.gsp_down && <Badge tone="risk">GSP offline</Badge>}
@@ -126,7 +130,14 @@ function Overview({ s, onOpen }: { s: Summary; onOpen: (id: string) => void }) {
 
   const r = s.reconcile || {};
   return (
-    <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+    <div className="space-y-5">
+     {s.money.overclaimed > 0 && (
+       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+         <div className="lg:col-span-2"><OverclaimPanel reloadKey={s.ran_at} /></div>
+         <RegistrationRoiPanel reloadKey={s.ran_at} />
+       </div>
+     )}
+     <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
       <Card className="p-5 lg:col-span-2">
         <SectionHead title="Highest tax at stake" sub="Where the agent spends attention — click any row for the full trail." />
         {!recent ? <Spinner /> : (
@@ -163,6 +174,7 @@ function Overview({ s, onOpen }: { s: Summary; onOpen: (id: string) => void }) {
           </ul>
         </Card>
       </div>
+     </div>
     </div>
   );
 }

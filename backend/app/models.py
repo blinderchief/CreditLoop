@@ -52,6 +52,9 @@ class Claim(SQLModel, table=True):
     expected_value_score: float = 0.0  # tax_at_stake * p - cost_to_process
     tier: int = 0                      # triage tier assigned
     receipt_path: Optional[str] = None
+    # Whether finance already claimed this ITC in a filed GSTR-3B. A dead credit
+    # that was already claimed is an OVERCLAIM — money owed back with interest.
+    already_claimed: bool = False
 
 
 class Invoice(SQLModel, table=True):
@@ -71,6 +74,12 @@ class Invoice(SQLModel, table=True):
     buyer_name: str = ""
     extraction_confidence: float = 1.0
     extraction_method: ExtractionMethod = ExtractionMethod.SYNTHETIC_TRUTH
+    # Place of supply: the first 2 digits of the supplier GSTIN ARE the state —
+    # free, no API call. place_of_supply_state is where the supply legally
+    # happened (per the category's POS rule). tax_type is CGST_SGST or IGST.
+    supplier_state_code: Optional[str] = None
+    place_of_supply_state: Optional[str] = None
+    tax_type: str = "CGST_SGST"
 
     @property
     def total_tax(self) -> float:

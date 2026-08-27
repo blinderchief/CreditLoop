@@ -61,6 +61,16 @@ export function ClaimDrawer({ id, onClose }: { id: string | null; onClose: () =>
               </div>
             )}
 
+            {d.claim.already_claimed && v && ["STATE_TRAPPED", "BLOCKED_17_5", "UNRECOVERABLE_WRONG_ENTITY"].includes(v.decision) && (
+              <div className="mt-4 rounded-2xl border border-loss/30 bg-loss-soft p-4">
+                <div className="text-sm font-semibold text-loss">⚠ Overclaim — already filed in GSTR-3B</div>
+                <p className="mt-1 text-sm text-ink/80">
+                  This credit is structurally dead, but it was already claimed. {rupees(v.tax_at_stake, true)} must be
+                  reversed — with 24% p.a. interest until you do.
+                </p>
+              </div>
+            )}
+
             {v && DRAFT_DECISIONS.has(v.decision) && <DraftPanel id={d.claim.claim_id} decision={v.decision} />}
 
             <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -84,6 +94,8 @@ export function ClaimDrawer({ id, onClose }: { id: string | null; onClose: () =>
                     <Row k="Supplier GSTIN" mono val={d.invoice.supplier_gstin || "— missing —"} />
                     <Row k="Invoice #" mono val={d.invoice.invoice_no || "—"} />
                     <Row k="Date" val={d.invoice.invoice_date || "—"} />
+                    <Row k="Supplier state" val={d.invoice.supplier_state || "—"} />
+                    <Row k="Place of supply" val={`${d.invoice.place_of_supply || "—"} · ${d.invoice.tax_type}`} />
                     <Row k="Taxable" val={rupees(d.invoice.taxable_value, true)} />
                     <Row k="Tax (C+S+I)" val={rupees(d.invoice.total_tax, true)} />
                     <Row k="Billed to" val={d.invoice.buyer_name} />

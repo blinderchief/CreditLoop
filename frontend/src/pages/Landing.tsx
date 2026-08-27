@@ -13,7 +13,6 @@ export function Landing() {
       <Nav />
       <Hero />
       <Ticker s={s} />
-      <Showcase />
       <Problem />
       <Steps />
       <Trust s={s} />
@@ -72,15 +71,16 @@ function Hero() {
         <div className="fadeup mb-6 inline-flex items-center gap-2 rounded-full border border-[#e9b357]/25 bg-[#e9b357]/[0.06] px-3 py-1 text-xs text-[#f7dca0] backdrop-blur">
           <span className="h-1.5 w-1.5 rounded-full bg-[#e9b357]" /> AI Finance Controller for GST
         </div>
-        <h1 className="fadeup text-[2.6rem] font-semibold leading-[1.05] tracking-tight sm:text-6xl md:text-[4.25rem]">
+        <h1 className="fadeup text-[2.3rem] font-semibold leading-[1.06] tracking-tight sm:text-5xl md:text-[3.8rem]">
           The GST you’re losing,<br />
           <span className="bg-gradient-to-b from-[#f7dca0] via-[#e9b357] to-[#c88a3e] bg-clip-text text-transparent">
-            recovered before the money moves.
+            and the GST you shouldn’t have claimed.
           </span>
         </h1>
         <p className="fadeup mx-auto mt-6 max-w-2xl text-lg text-[#f2e7d3]/75">
-          Indian companies quietly lose 18% GST on every employee expense. CreditLoop is the agent that
-          decides whether the credit comes back — <em>before</em> you pay, where it’s still fixable.
+          Two ways Indian companies lose GST on expenses — credit that was never yours to claim, and
+          credit you claimed anyway and now owe back with interest. CreditLoop knows the difference,
+          <em> before</em> the money moves.
         </p>
         <div className="fadeup mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
           <Link to="/app" className="glow-gold rounded-full bg-[#e9b357] px-6 py-3 font-semibold text-[#0d0b09] transition hover:brightness-110">
@@ -99,13 +99,13 @@ function Hero() {
 function Ticker({ s }: { s: Summary | null }) {
   const items = s ? [
     ["Claims judged", String(s.batch.claims)],
-    ["GST recoverable", rupees(s.money.recovered)],
+    ["GST recoverable", rupees(s.money.recoverable)],
+    ["Structurally dead", rupees(s.money.structurally_dead)],
+    ["⚠ Wrongly claimed", rupees(s.money.overclaimed)],
+    ["State-trapped", rupees(s.money.state_trapped)],
     ["2B match rate", `${Math.round(s.match.match_rate * 100)}%`],
     ["GSP calls / claim", String(s.gsp_calls_per_claim ?? "0.06")],
-    ["Paid on time", String(s.batch.paid)],
-    ["Exceptions surfaced", String(s.batch.exceptions)],
-    ["Lost to wrong entity", rupees(s.money.lost_wrong_entity)],
-    ["Blocked u/s 17(5)", rupees(s.money.blocked_17_5)],
+    ["Fixable (wrong GSTIN)", rupees(s.money.fixable_wrong_gstin)],
   ] : [];
   const row = (
     <div className="marquee">
@@ -128,83 +128,54 @@ function Ticker({ s }: { s: Summary | null }) {
   );
 }
 
-/* ------------------------------------------------------------- showcase */
-function Showcase() {
-  return (
-    <section className="dotgrid px-6 py-20">
-      <div className="mx-auto max-w-6xl">
-        <div className="mb-8 text-center">
-          <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-            One number that isn’t in your finance stack
-          </h2>
-          <p className="mx-auto mt-3 max-w-2xl text-[#f2e7d3]/60">
-            ₹ recovered vs ₹ lost, for a whole batch of claims — decided before a rupee moves,
-            with the exact rule cited on every verdict.
-          </p>
-        </div>
-        <BrowserFrame src="/product.png" alt="CreditLoop dashboard" />
-      </div>
-    </section>
-  );
-}
-
-function BrowserFrame({ src, alt }: { src: string; alt: string }) {
-  return (
-    <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#17120c] shadow-2xl glow-gold">
-      <div className="flex items-center gap-1.5 border-b border-white/10 px-4 py-3">
-        <span className="h-3 w-3 rounded-full bg-[#db6048]/70" />
-        <span className="h-3 w-3 rounded-full bg-[#e9b357]/70" />
-        <span className="h-3 w-3 rounded-full bg-[#cf9a4e]/40" />
-        <span className="ml-4 rounded-md bg-white/5 px-3 py-0.5 text-xs text-[#f2e7d3]/40">app.creditloop.in</span>
-      </div>
-      <img src={src} alt={alt} className="w-full" />
-    </div>
-  );
-}
-
 /* -------------------------------------------------------------- problem */
 function Problem() {
   return (
-    <section id="problem" className="border-t border-white/5 px-6 py-20">
-      <div className="mx-auto max-w-5xl">
+    <section id="problem" className="dotgrid border-t border-white/5 px-6 py-20">
+      <div className="mx-auto max-w-4xl">
         <div className="text-center">
           <div className="text-xs font-semibold uppercase tracking-widest text-[#e9b357]">The problem</div>
           <h2 className="mx-auto mt-3 max-w-3xl text-3xl font-semibold tracking-tight sm:text-4xl">
-            Two pipelines that never meet
+            A perfect invoice that’s still worthless
           </h2>
-          <p className="mx-auto mt-3 max-w-2xl text-[#f2e7d3]/60">
-            The money side knows a vendor name. The tax side needs a GSTIN and invoice number. There’s
-            no join key — so 18% GST leaks, silently, one ₹300 receipt at a time.
+        </div>
+
+        <div className="mx-auto mt-10 max-w-2xl space-y-5 text-lg leading-relaxed text-[#f2e7d3]/80">
+          <p>
+            Priya travels to Mumbai for a client meeting. Hotel bill: ₹10,000 + <span className="text-[#f7dca0]">₹1,800 GST</span>.
+            She does everything right — bill in the company’s name, correct GSTIN, and the hotel files its
+            return on time.
+          </p>
+          <p className="text-2xl font-semibold text-[#f2e7d3]">The ₹1,800 is still dead.</p>
+          <p>
+            Hotels charge the GST of the state they stand in. Your company is registered in Karnataka.
+            That’s <span className="text-[#f7dca0]">Maharashtra</span> tax — and you can’t touch it.
+          </p>
+          <p>
+            Nobody at the company knows this, so finance claimed it anyway — along with{" "}
+            <span className="text-loss font-semibold">₹47,000 of others like it.</span>{" "}
+            That’s not lost money. That’s money you owe back, with 24% interest.
           </p>
         </div>
-        <div className="mt-12 grid grid-cols-1 gap-5 md:grid-cols-2">
-          <Pane title="The money pipeline" tone="#f2e7d3"
-            rows={[["Knows", "Priya · hotel · ₹11,800"], ["Speed", "fast, loud, approved in a day"], ["Blind to", "whose name the bill is in"]]} />
-          <Pane title="The tax pipeline" tone="#e9b357"
-            rows={[["Needs", "GSTIN 27… · invoice HTL/2026/4471"], ["Speed", "monthly, silent, owned by a CA"], ["Deadline", "GSTR-2B locks the credit"]]} />
+
+        <div className="mx-auto mt-10 grid max-w-3xl grid-cols-1 gap-3 sm:grid-cols-3">
+          <Fate title="Recoverable" tone="text-money" body="Credit is yours — claim it." />
+          <Fate title="Structurally dead" tone="text-[#c9bca6]" body="Never existed. Book as cost; don’t claim." />
+          <Fate title="Wrongly claimed" tone="text-loss" body="Claimed anyway → owe back + interest." />
         </div>
-        <p className="mx-auto mt-10 max-w-2xl text-center text-lg text-[#f2e7d3]/80">
-          CreditLoop builds the missing join —{" "}
-          <span className="text-[#f7dca0]">claim → invoice → GSTIN → 2B → payout → book</span>{" "}
-          — and moves the decision to before the payout.
+        <p className="mt-8 text-center text-lg text-[#f2e7d3]/70">
+          CreditLoop is the layer that knows the difference.
         </p>
       </div>
     </section>
   );
 }
 
-function Pane({ title, tone, rows }: { title: string; tone: string; rows: [string, string][] }) {
+function Fate({ title, tone, body }: { title: string; tone: string; body: string }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-6">
-      <div className="text-lg font-semibold" style={{ color: tone }}>{title}</div>
-      <dl className="mt-4 space-y-3">
-        {rows.map(([k, v]) => (
-          <div key={k} className="flex justify-between gap-4 border-t border-white/5 pt-3 text-sm">
-            <dt className="text-[#f2e7d3]/45">{k}</dt>
-            <dd className="text-right font-medium">{v}</dd>
-          </div>
-        ))}
-      </dl>
+    <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5 text-center">
+      <div className={`text-base font-semibold ${tone}`}>{title}</div>
+      <p className="mt-1.5 text-sm text-[#f2e7d3]/60">{body}</p>
     </div>
   );
 }
@@ -216,9 +187,10 @@ function Steps() {
       <div className="mx-auto max-w-5xl">
         <h2 className="text-center text-3xl font-semibold tracking-tight sm:text-4xl">One loop, closed end to end</h2>
         <p className="mx-auto mt-3 max-w-xl text-center text-[#f2e7d3]/60">Simple for the employee. Everything hard happens in the backend.</p>
-        <div className="mt-12 grid grid-cols-1 gap-5 md:grid-cols-3">
+        <div className="mt-12 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
           <Step n="01" title="Read the receipt" body="A vision model pulls GSTIN, invoice number and tax split off a crumpled photo — and refuses to guess when it can’t read it." />
-          <Step n="02" title="Judge with the law" body="A deterministic engine — never an LLM — decides eligibility, citing the exact rule and version. Wrong-entity, blocked, or recoverable, before payout." />
+          <Step n="1.5" title="Locate the supply" body="Where did this legally happen? The first two digits of the GSTIN give the state; the category gives the rule. A Mumbai hotel is Maharashtra tax, whoever pays." highlight />
+          <Step n="02" title="Judge with the law" body="A deterministic engine — never an LLM — decides eligibility, citing the exact rule and version. Recoverable, dead, or fixable, before payout." />
           <Step n="03" title="Chase · pay · reconcile" body="Pay on time, chase the vendor while it’s still fixable, then match against GSTR-2B. Every rupee has an audit trail." />
         </div>
       </div>
@@ -226,10 +198,10 @@ function Steps() {
   );
 }
 
-function Step({ n, title, body }: { n: string; title: string; body: string }) {
+function Step({ n, title, body, highlight }: { n: string; title: string; body: string; highlight?: boolean }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
-      <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#e9b357]/10 font-mono text-sm text-[#e9b357]">{n}</div>
+    <div className={`rounded-2xl border p-6 ${highlight ? "border-[#e9b357]/30 bg-[#e9b357]/[0.06]" : "border-white/10 bg-white/[0.03]"}`}>
+      <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#e9b357]/15 font-mono text-sm text-[#e9b357]">{n}</div>
       <div className="mt-4 text-lg font-semibold">{title}</div>
       <p className="mt-2 text-sm text-[#f2e7d3]/60">{body}</p>
     </div>

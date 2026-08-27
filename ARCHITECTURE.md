@@ -84,9 +84,17 @@ Gemini (`llm.py`) powers exactly the three jobs the PRD earmarks for an LLM, eac
 
 It is never on the path that decides eligibility or moves money.
 
-## P2 — architected for, deliberately not built
+## Multi-state / place of supply — built (a documented change of mind)
 
-Per the PRD, these are designed-around, not implemented: **booking-moment routing** (intervening at the hotel counter, not at claim submission — the real fix for a one-way door), **corporate-card real-time capture**, **multi-GSTIN / multi-state** (the company entity is a single config today, but every verdict is scoped to one GSTIN so it generalises), **cross-customer vendor-graph federation** (the `Vendor` table is already the shared moat, single-tenant for now), and **ERP write-back** (Tally / Zoho Books — the ledger is the clean source for it). Each has a seam in the code or data model; none is faked in the demo.
+**This started in "architected for, not built." That call was wrong, and we changed it deliberately.** While hardening the demo's opening story we found the actual rule: hotel accommodation's *place of supply* is the hotel's state (s.12(3), IGST Act; CBIC 2019 clarification; multiple AAR rulings), and GST registration is state-wise. So a Mumbai hotel bill is Maharashtra CGST+SGST — a Karnataka-only company can't claim it *even if the invoice is perfect*. That isn't an edge case; it's the centre of the domain. Leaving multi-state out would have made the whole "we understand GST, not just the workflow" claim hollow.
+
+So the company is now a **list of `CompanyRegistration`s** (Karnataka + Maharashtra), and the deterministic engine carries two new state-aware rules (`POS_STATE_REGISTERED` → `STATE_TRAPPED`, `POS_CORRECT_GSTIN` → the *fixable* `WRONG_GSTIN_USED`), plus `RECOVERABLE_IGST` for supplies that follow the recipient. The place of supply comes free from the first two digits of the supplier GSTIN — no API call. This turned "two fates" (recoverable / not) into **three** (recoverable / structurally dead / already overclaimed), and unlocked the overclaim scanner and registration-ROI report. The rule that an LLM never touches this path is unchanged.
+
+Showing you promoted a P2 item *because you found the actual law* reads better than a doc that happened to be right.
+
+## P2 — still architected for, deliberately not built
+
+**Booking-moment routing** (intervening at the hotel counter, not at claim submission — the GSTIN picker at `/api/gstin-picker` is the read-only half of this; the write half is real-time capture), **corporate-card real-time capture**, **cross-customer vendor-graph federation** (the `Vendor` table is already the shared moat, single-tenant for now), and **ERP write-back** (Tally / Zoho Books — the ledger is the clean source for it). Each has a seam in the code or data model; none is faked in the demo.
 
 ## What runs where
 

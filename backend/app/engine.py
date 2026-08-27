@@ -55,10 +55,23 @@ class EvalContext:
     # True only when a HIGH-VALUE claim needed validation but the GSP was down
     # and the answer wasn't cached -> decide PROVISIONAL, never block the payout.
     gsp_unverified: bool = False
+    # Multi-state place-of-supply facts (PRD v2). Default to the configured
+    # company so older callers keep working.
+    company_gstins: set[str] = field(default_factory=lambda: set(settings.company_gstins))
+    registered_states: set[str] = field(default_factory=lambda: set(settings.registered_states))
+    pos_location_of_supply: bool = False   # True if this category is trapped in the supply state
 
     @property
     def total_tax(self) -> float:
         return round(self.cgst + self.sgst + self.igst, 2)
+
+    @property
+    def pos_state(self) -> str:
+        return (self.supplier_gstin or "")[:2]
+
+    @property
+    def buyer_state(self) -> str:
+        return (self.buyer_gstin or "")[:2]
 
 
 @dataclass
@@ -103,11 +116,29 @@ def _not_duplicate(ctx: EvalContext) -> bool:
 
 
 def _billed_to_company(ctx: EvalContext) -> bool:
-    return ctx.buyer_gstin == settings.company_gstin
+    # Multi-state: billed to ANY of the company's registered GSTINs.
+    return ctx.buyer_gstin in ctx.company_gstins
 
 
 def _not_blocked_17_5(ctx: EvalContext) -> bool:
     return ctx.category not in BLOCKED_CATEGORIES_17_5
+
+
+def _registered_in_pos_state(ctx: EvalContext) -> bool:
+    # Only supply-located categories can be state-trapped. If the place of
+    # supply is a state we aren't registered in, the credit never existed.
+    if not ctx.pos_location_of_supply:
+        return True
+    return ctx.pos_state in ctx.registered_states
+
+
+def _correct_state_gstin(ctx: EvalContext) -> bool:
+    # We ARE registered in the POS state, but did the invoice use that state's
+    # GSTIN? If not, the credit was available and thrown away by a fixable
+    # mistake -> WRONG_GSTIN_USED.
+    if not ctx.pos_location_of_supply:
+        return True
+    return ctx.buyer_state == ctx.pos_state
 
 
 def _supplier_files_monthly(ctx: EvalContext) -> bool:
@@ -131,6 +162,8 @@ PREDICATES = {
     "not_duplicate": _not_duplicate,
     "billed_to_company": _billed_to_company,
     "not_blocked_17_5": _not_blocked_17_5,
+    "registered_in_pos_state": _registered_in_pos_state,
+    "correct_state_gstin": _correct_state_gstin,
     "supplier_files_monthly": _supplier_files_monthly,
     "noop": _noop,
 }
@@ -170,26 +203,46 @@ def evaluate(ctx: EvalContext, reg: RuleRegistry | None = None) -> VerdictResult
                 provisional=provisional,
             )
 
-    # All rules passed -> eligible. Provisional only if a high-value claim
-    # couldn't be validated against a live GSP.
+    # All rules passed -> eligible.
     provisional = ctx.gsp_unverified
-    decision = Decision.PROVISIONAL if provisional else Decision.RECOVERABLE
+    if provisional:
+        decision = Decision.PROVISIONAL
+        reasoning = "All eligibility rules passed under degraded GSP — marked PROVISIONAL, queued for refresh."
+    elif not ctx.pos_location_of_supply and ctx.igst > 0:
+        # cross-state supply that follows the recipient → IGST, fully claimable
+        decision = Decision.RECOVERABLE_IGST
+        reasoning = ("Place of supply follows the recipient; interstate IGST is claimable at our "
+                     "registered location. Recoverable.")
+    else:
+        decision = Decision.RECOVERABLE
+        reasoning = "All eligibility rules passed. ITC is recoverable once the supplier files."
     return VerdictResult(
         decision=decision,
         rule_ids=checked_ids, rule_versions=checked_versions,
         reason_code=(ReasonCode.CONTESTED_RULE.value if provisional else None),
-        reasoning=(
-            "All eligibility rules passed under degraded GSP — marked PROVISIONAL, "
-            "queued for refresh." if provisional else
-            "All eligibility rules passed. ITC is recoverable once the supplier files."
-        ),
+        reasoning=reasoning,
         tax_at_stake=ctx.total_tax,
         provisional=provisional,
     )
 
 
+def _state_name(code: str) -> str:
+    from .config import STATE_NAMES
+    return STATE_NAMES.get(code, code)
+
+
 def _explain(rule: Rule, decision: Decision, ctx: EvalContext) -> str:
     tax = f"₹{ctx.total_tax:,.2f}"
+    if decision == Decision.STATE_TRAPPED:
+        return (f"Place of supply is {_state_name(ctx.pos_state)} ({ctx.pos_state}) — you're only "
+                f"registered in {', '.join(sorted(_state_name(s) for s in ctx.registered_states))}. "
+                f"{tax} of GST is structurally dead: no invoice, in any name, can recover it. "
+                f"Book as cost; do not claim. Cited {rule.rule_id} v{rule.version} ({rule.source_citation}).")
+    if decision == Decision.WRONG_GSTIN_USED:
+        right = settings.gstin_for_state(ctx.pos_state) or f"the {_state_name(ctx.pos_state)} GSTIN"
+        return (f"Place of supply is {_state_name(ctx.pos_state)}, where you ARE registered — but the "
+                f"invoice used the {_state_name(ctx.buyer_state)} GSTIN. {tax} is recoverable if reissued "
+                f"against {right}. Fixable. Cited {rule.rule_id} v{rule.version}.")
     if decision == Decision.UNRECOVERABLE_WRONG_ENTITY:
         return (f"Invoice is billed to '{ctx.buyer_gstin or 'an individual'}', not the company "
                 f"GSTIN. {tax} of GST cannot be claimed. Cited {rule.rule_id} v{rule.version} "

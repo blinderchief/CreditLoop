@@ -69,8 +69,9 @@ def compute_metrics(pipeline_stats: dict | None = None) -> dict:
     decision_acc = round(correct / n, 4)
 
     # --- false-block rate (good claims wrongly denied) -------------------
-    RECOVERABLE_GT = {"RECOVERABLE", "PENDING_QRMP"}
-    DENY = {Decision.UNRECOVERABLE_WRONG_ENTITY.value, Decision.BLOCKED_17_5.value, "EXCEPTION"}
+    RECOVERABLE_GT = {"RECOVERABLE", "RECOVERABLE_IGST", "PENDING_QRMP", "WRONG_GSTIN_USED"}
+    DENY = {Decision.UNRECOVERABLE_WRONG_ENTITY.value, Decision.BLOCKED_17_5.value,
+            Decision.STATE_TRAPPED.value, "EXCEPTION"}
     false_blocks = []
     for c in claims:
         v = verdicts[c.claim_id]
@@ -117,6 +118,34 @@ def compute_metrics(pipeline_stats: dict | None = None) -> dict:
         "tp": tp, "fp": fp, "fn": fn,
     }
 
+    # --- STATE_TRAPPED precision / recall (over-flagging costs real credits) --
+    def _prf(code: str) -> dict:
+        tp = fp = fn = 0
+        for c in claims:
+            got = verdicts[c.claim_id].decision.value == code
+            exp = gt[c.claim_id]["expected_decision"] == code
+            tp += got and exp
+            fp += got and not exp
+            fn += (not got) and exp
+        return {"precision": round(tp / (tp + fp), 4) if (tp + fp) else 1.0,
+                "recall": round(tp / (tp + fn), 4) if (tp + fn) else 1.0,
+                "tp": tp, "fp": fp, "fn": fn}
+
+    state_trapped = _prf("STATE_TRAPPED")
+    wrong_gstin = _prf("WRONG_GSTIN_USED")
+
+    # --- overclaim exposure: dead credit that was already claimed in 3B -------
+    dead_vals = {Decision.STATE_TRAPPED, Decision.BLOCKED_17_5, Decision.UNRECOVERABLE_WRONG_ENTITY}
+    over_flagged = [c for c in claims if c.already_claimed and verdicts[c.claim_id].decision in dead_vals]
+    over_truth = [c for c in claims if c.already_claimed]
+    overclaim_exposure = round(sum(verdicts[c.claim_id].tax_at_stake for c in over_flagged), 2)
+    overclaim = {
+        "exposure": overclaim_exposure,
+        "interest_24pc_yr": round(overclaim_exposure * 0.24, 2),
+        "claims": len(over_flagged),
+        "detection_recall": round(len(over_flagged) / len(over_truth), 4) if over_truth else 1.0,
+    }
+
     # --- extraction accuracy: real VLM eval if present, else synthetic ----
     ee_path = settings.db_path.parent / "extraction_eval.json"
     if ee_path.exists():
@@ -142,6 +171,9 @@ def compute_metrics(pipeline_stats: dict | None = None) -> dict:
         "exception_rate": exception_rate,
         "exception_count": len(exceptions),
         "section_17_5": s175,
+        "state_trapped": state_trapped,
+        "wrong_gstin": wrong_gstin,
+        "overclaim": overclaim,
         "extraction": extraction,
         "throughput": pipeline_stats or {},
     }
@@ -182,6 +214,10 @@ def _report(r: dict) -> None:
     t.add_row("Decision accuracy (under triage)", f"{r['decision_accuracy_under_triage']*100:.1f}%")
     t.add_row("Engine accuracy (full validation)", f"{r['engine_accuracy_full_validation']*100:.1f}%")
     t.add_row("Calibration ECE (lower better)", f"{r['calibration_ece']:.3f}")
+    t.add_row("STATE_TRAPPED precision / recall",
+              f"{r['state_trapped']['precision']*100:.0f}% / {r['state_trapped']['recall']*100:.0f}%")
+    t.add_row("Overclaim exposure identified",
+              f"{rupees(r['overclaim']['exposure'])}  (+{rupees(r['overclaim']['interest_24pc_yr'])}/yr interest)")
     t.add_row("False-block rate", f"{r['false_block_count']} claims / {rupees(r['false_block_cost'])}")
     t.add_row("Exception rate", f"{r['exception_rate']*100:.1f}%  ({r['exception_count']} claims)")
     console.print(t)

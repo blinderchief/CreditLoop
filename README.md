@@ -1,8 +1,8 @@
 # CreditLoop
 
-**The GST you're losing, recovered before the money moves.**
+**The GST you're losing — and the GST you shouldn't have claimed.**
 
-CreditLoop is an AI finance agent that catches the tax credit Indian companies quietly lose on employee expenses — and decides whether it'll come back *before* you pay the employee.
+CreditLoop is an AI finance agent that sorts the GST on every employee expense into three fates — recoverable, structurally dead, or already overclaimed — and decides *before* the money moves.
 
 Razorpay AI Buildathon 2026 · Track 04 (AI Finance Controller).
 
@@ -12,16 +12,21 @@ Razorpay AI Buildathon 2026 · Track 04 (AI Finance Controller).
 
 ## What is this, in plain words?
 
-Say Priya travels for work and pays ₹11,800 for a hotel (₹10,000 + ₹1,800 GST). At checkout the receptionist asks "bill in whose name?" and Priya says "Priya Sharma." **That ₹1,800 just died.** Because the bill isn't in the company's name, the company can never claim that GST back. Nobody notices — it's ₹1,800, no complaint is filed. Multiply across 60 employees and it's lakhs a year, gone silently.
+Priya travels to Mumbai for a client meeting. Hotel bill: ₹10,000 + ₹1,800 GST. She does **everything right** — bill in the company's name, correct GSTIN, hotel files its return on time.
 
-Why does this keep happening? A company runs **two separate systems that never talk**:
+**The ₹1,800 is still dead.** Hotels charge the GST of the state they stand in. Your company is registered in Karnataka. That's *Maharashtra* tax, and a Karnataka registration can't touch it (place of supply = the hotel's state, s.12(3) IGST Act; registration is state-wise).
 
-- **Paying Priya back** — she submits a receipt, a manager approves, finance pays. Fast, loud, nobody's thinking about tax.
-- **The monthly GST return** — the government shows which of your purchases your suppliers *reported*. That's the credit you can claim.
+Nobody at the company knows this, so finance claimed it anyway — along with ₹47,000 of others like it. **That's not lost money. That's money you owe back, with 24% interest.**
 
-The expense system knows *"Priya, hotel, ₹11,800."* The tax system needs *"GSTIN 27..., invoice HTL/2026/4471."* Different information. **There's no join key**, so no one ever lines up "what we paid" against "what we can claim back."
+So there are **three fates**, not two, and every existing tool only thinks about the first:
 
-**CreditLoop builds that missing join, and moves the decision to before the payout — where it's still fixable.**
+| Fate | Meaning | What CreditLoop does |
+|---|---|---|
+| **Recoverable** | Credit is yours (or becomes yours once a wrong-GSTIN mistake is fixed) | Claim it; chase the vendor if unfiled |
+| **Structurally dead** | Credit never existed (out-of-state hotel, blocked u/s 17(5)) | Stop chasing. Book as cost. **Don't claim.** |
+| **Overclaim risk** | You already claimed dead credit | Flag it, quantify the interest, reverse it |
+
+**CreditLoop is the layer that knows the difference** — and it decides before the payout, where it's still fixable. The place of supply comes free from the first two digits of the supplier's GSTIN; no API call.
 
 ---
 
@@ -128,16 +133,18 @@ cd ../backend && uv run uvicorn app.api:app --host 0.0.0.0 --port 8137
 
 | Metric | Value |
 |---|---|
-| **2B match rate** | **100%** (48/48 lines) |
-| Deterministic engine accuracy | **100%** (vs ground truth) |
-| Decision accuracy under triage | 97% |
+| **2B match rate** | **100%** (60/60 lines) |
+| Deterministic engine accuracy | **100%** (vs ground truth — see the honest caveat in WHATBROKE.md) |
+| Decision accuracy under triage | 97.5% |
 | Section 17(5) precision / recall | 100% / 100% |
-| Calibration (ECE) | 0.13 |
+| **STATE_TRAPPED precision / recall** | **100% / 100%** (over-flagging costs real credits) |
+| **Overclaim exposure identified** | **₹8,311** (16 claims, +₹1,995/yr interest) |
+| Calibration (ECE) | **0.069** (was 0.13; see WHATBROKE.md) |
 | False-block rate | **0 claims / ₹0** |
-| Exception rate | 27.5% (55 claims, each with a machine reason code) |
-| **Live GST-provider calls / claim** | **0.06** |
+| Exception rate | 17.5% (35 claims, each with a machine reason code) |
+| Live GST-provider calls / claim | 0.10 |
 
-**Two honest points the panel should hear:** the exception rate is a *feature* — an agent that always decides is an agent that guesses; and the 0.06 calls/claim is the engineering story — cheap claims cost nothing, live validation is spent only where money is at stake.
+**Honest points for the panel:** the exception rate is a *feature* (an agent that always decides is guessing); "engine accuracy 100%" measures implementation correctness, not legal judgment, since it's graded against ground truth from the same rules — so trust the *not*-self-graded numbers (match rate, calibration, real VLM extraction); and the place-of-supply logic is CA-reviewable (verified against s.12, the CBIC 2019 clarification, and AAR rulings, but a domain expert should sign off before it's called authoritative).
 
 ---
 
