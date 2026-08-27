@@ -55,6 +55,7 @@ class Claim(SQLModel, table=True):
     # Whether finance already claimed this ITC in a filed GSTR-3B. A dead credit
     # that was already claimed is an OVERCLAIM — money owed back with interest.
     already_claimed: bool = False
+    claimed_days_ago: int = 0          # days since the wrong claim was filed (for interest)
 
 
 class Invoice(SQLModel, table=True):
@@ -80,6 +81,7 @@ class Invoice(SQLModel, table=True):
     supplier_state_code: Optional[str] = None
     place_of_supply_state: Optional[str] = None
     tax_type: str = "CGST_SGST"
+    buyer_gstin_used: Optional[str] = None   # which of our registrations was quoted on the bill
 
     @property
     def total_tax(self) -> float:

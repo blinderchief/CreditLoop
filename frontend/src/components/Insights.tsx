@@ -17,7 +17,9 @@ export function OverclaimPanel({ reloadKey }: { reloadKey?: unknown }) {
           <div className="text-xs font-semibold uppercase tracking-wide text-loss">⚠ Overclaim exposure</div>
           <div className="mt-1 text-3xl font-semibold text-loss tnum">{rupees(o.exposure)}</div>
           <div className="mt-0.5 text-xs text-muted">
-            {o.claims} claims already filed in GSTR-3B · +{rupees(o.interest_24pc_yr)}/yr interest at 24%
+            {o.claims} claims already filed in GSTR-3B
+            {o.interest_accrued ? ` · ${rupees(o.interest_accrued)} interest accrued so far` : ""}
+            {" "}· +{rupees(o.interest_24pc_yr)}/yr at 24%
           </div>
         </div>
       </div>

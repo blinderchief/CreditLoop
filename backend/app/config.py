@@ -9,18 +9,15 @@ from typing import Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from .gstin import compute_checksum
+from .state_codes import STATE_CODES
 
 # backend/  (this file lives in backend/app/config.py)
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BACKEND_DIR / "data"
 RECEIPTS_DIR = DATA_DIR / "receipts"
 
-# State-code → name (only the states this demo touches).
-STATE_NAMES = {
-    "29": "Karnataka", "27": "Maharashtra", "07": "Delhi", "33": "Tamil Nadu",
-    "24": "Gujarat", "36": "Telangana", "19": "West Bengal", "09": "Uttar Pradesh",
-    "06": "Haryana", "23": "Madhya Pradesh",
-}
+# State-code → name (full GST list; re-exported for convenience).
+STATE_NAMES = STATE_CODES
 
 
 def _company_gstin(state_code: str, pan: str = "AABCA1234A", entity: str = "1") -> str:

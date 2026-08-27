@@ -36,6 +36,7 @@ def overclaim_report() -> dict:
 
     buckets: dict[str, dict] = {}
     total = 0.0
+    interest = 0.0   # live-computed: amount × 24% p.a. × days_since_claim / 365
     for c in claims:
         if not c.already_claimed:
             continue
@@ -52,11 +53,13 @@ def overclaim_report() -> dict:
         b["amount"] = round(b["amount"] + v.tax_at_stake, 2)
         b["claims"] += 1
         total += v.tax_at_stake
+        interest += v.tax_at_stake * 0.24 * (c.claimed_days_ago or 180) / 365
 
     rows = sorted(buckets.values(), key=lambda r: -r["amount"])
     return {
         "exposure": round(total, 2),
-        "interest_24pc_yr": round(total * 0.24, 2),
+        "interest_accrued": round(interest, 2),     # to date, per claim's filing date
+        "interest_24pc_yr": round(total * 0.24, 2),  # forward annual rate
         "claims": sum(r["claims"] for r in rows),
         "breakdown": rows,
     }

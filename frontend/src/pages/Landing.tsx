@@ -78,9 +78,8 @@ function Hero() {
           </span>
         </h1>
         <p className="fadeup mx-auto mt-6 max-w-2xl text-lg text-[#f2e7d3]/75">
-          Two ways Indian companies lose GST on expenses — credit that was never yours to claim, and
-          credit you claimed anyway and now owe back with interest. CreditLoop knows the difference,
-          <em> before</em> the money moves.
+          Your finance team knows the rules. What they can’t do is apply them to 3,000 claims a year,
+          one line at a time, <em>before</em> the money moves. CreditLoop can.
         </p>
         <div className="fadeup mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
           <Link to="/app" className="glow-gold rounded-full bg-[#e9b357] px-6 py-3 font-semibold text-[#0d0b09] transition hover:brightness-110">
@@ -152,7 +151,8 @@ function Problem() {
             That’s <span className="text-[#f7dca0]">Maharashtra</span> tax — and you can’t touch it.
           </p>
           <p>
-            Nobody at the company knows this, so finance claimed it anyway — along with{" "}
+            Your finance team knows this rule. What they can’t do is apply it to 3,000 claims a year,
+            one line at a time, before the money moves. So the ₹1,800 got claimed anyway — along with{" "}
             <span className="text-loss font-semibold">₹47,000 of others like it.</span>{" "}
             That’s not lost money. That’s money you owe back, with 24% interest.
           </p>
@@ -164,7 +164,8 @@ function Problem() {
           <Fate title="Wrongly claimed" tone="text-loss" body="Claimed anyway → owe back + interest." />
         </div>
         <p className="mt-8 text-center text-lg text-[#f2e7d3]/70">
-          CreditLoop is the layer that knows the difference.
+          We’re not smarter than your CA. We’re <span className="text-[#f7dca0]">coverage, timing, and memory</span> —
+          the same answer, applied to every line, on time, remembered.
         </p>
       </div>
     </section>
@@ -212,27 +213,28 @@ function Step({ n, title, body, highlight }: { n: string; title: string; body: s
 function Trust({ s }: { s: Summary | null }) {
   const stats = [
     ["100%", "2B match rate"],
-    ["100%", "engine accuracy"],
+    ["100%", "state-trap recall"],
     ["₹0", "false-block cost"],
-    [String(s?.gsp_calls_per_claim ?? "0.06"), "API calls / claim"],
+    [s ? rupees(s.money.overclaimed) : "—", "overclaim caught"],
   ];
   return (
     <section id="proof" className="border-t border-white/5 px-6 py-20">
       <div className="mx-auto max-w-5xl">
         <div className="grid grid-cols-1 items-center gap-10 md:grid-cols-2">
           <div>
-            <div className="text-xs font-semibold uppercase tracking-widest text-[#e9b357]">Why you can trust it</div>
+            <div className="text-xs font-semibold uppercase tracking-widest text-[#e9b357]">A compliance firewall</div>
             <h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
               An LLM never changes a tax verdict
             </h2>
             <p className="mt-4 text-[#f2e7d3]/65">
-              The law lives in a deterministic engine — versioned rules, cited on every verdict, fully
-              auditable. The model only reads receipts, drafts vendor requests, and proposes rule changes
-              a human approves. Wrong ITC carries 24% interest and penalties; “the AI decided” is not a
-              defence, so the AI doesn’t decide.
+              Three parts, strictly separated. The <span className="text-[#f7dca0]">Reader</span> (a vision model)
+              extracts and is allowed to be unsure. The <span className="text-[#f7dca0]">Judge</span> (deterministic
+              Python) decides and cites the law — never guesses. The <span className="text-[#f7dca0]">Actor</span> pays,
+              idempotently, and can’t double-pay. Wrong ITC carries 24% interest; “the AI decided” is not a defence,
+              so the AI doesn’t decide.
             </p>
             <div className="mt-6 flex flex-wrap gap-2 text-xs">
-              {["deterministic law", "append-only ledger", "idempotent payouts", "honest exception list"].map((t) => (
+              {["Reader · never decides", "Judge · cites law", "Actor · idempotent", "append-only, auditable"].map((t) => (
                 <span key={t} className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-[#f2e7d3]/70">{t}</span>
               ))}
             </div>
@@ -254,14 +256,14 @@ function Trust({ s }: { s: Summary | null }) {
 /* ------------------------------------------------------------------ cta */
 function CTA() {
   return (
-    <section className="px-6 py-24">
-      <div className="glow-gold mx-auto max-w-4xl rounded-3xl border border-[#e9b357]/20 bg-gradient-to-b from-[#e9b357]/[0.08] to-transparent p-12 text-center">
-        <Mark size={40} />
-        <h2 className="mt-5 text-3xl font-semibold tracking-tight sm:text-4xl">Close the loop.</h2>
-        <p className="mx-auto mt-3 max-w-xl text-[#f2e7d3]/65">
-          200 synthetic claims, judged, paid, and reconciled — with the counter moving in real time.
-        </p>
-        <Link to="/app" className="mt-8 inline-block rounded-full bg-[#e9b357] px-7 py-3 font-semibold text-[#0d0b09] transition hover:brightness-110">
+    <section className="border-t border-white/5 px-6 py-20">
+      <div className="mx-auto flex max-w-4xl flex-col items-center justify-between gap-6 sm:flex-row sm:text-left">
+        <div className="text-center sm:text-left">
+          <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">See it run on 200 claims.</h2>
+          <p className="mt-1 text-[#f2e7d3]/60">Judged, paid, and reconciled — the counter moves in real time.</p>
+        </div>
+        <Link to="/app"
+          className="shrink-0 rounded-full bg-[#e9b357] px-7 py-3 font-semibold text-[#0d0b09] transition hover:brightness-110">
           Open the live dashboard →
         </Link>
       </div>

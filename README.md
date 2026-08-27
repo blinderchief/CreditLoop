@@ -16,7 +16,9 @@ Priya travels to Mumbai for a client meeting. Hotel bill: ₹10,000 + ₹1,800 G
 
 **The ₹1,800 is still dead.** Hotels charge the GST of the state they stand in. Your company is registered in Karnataka. That's *Maharashtra* tax, and a Karnataka registration can't touch it (place of supply = the hotel's state, s.12(3) IGST Act; registration is state-wise).
 
-Nobody at the company knows this, so finance claimed it anyway — along with ₹47,000 of others like it. **That's not lost money. That's money you owe back, with 24% interest.**
+Your finance team knows this rule. What they can't do is apply it to 3,000 claims a year, one line at a time, before the money moves. So the ₹1,800 got claimed anyway — along with ₹47,000 of others like it. **That's not lost money. That's money you owe back, with 24% interest.**
+
+> **We're not smarter than your CA.** A CA answers "can I claim a Mumbai hotel from a Karnataka registration?" in two seconds. The gap isn't knowledge — it's **coverage** (every line, not a sample), **the join** (claim ↔ 2B), **timing** (verdict *before* payout), and **memory** (400 vendors' filing behaviour). *"You already know the answer. We apply it to every line, on time, and we remember."*
 
 So there are **three fates**, not two, and every existing tool only thinks about the first:
 

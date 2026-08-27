@@ -104,6 +104,7 @@ class ReasonCode(str, Enum):
     INVALID_GSTIN = "INVALID_GSTIN"                          # checksum / format fails
     GSTIN_NOT_ACTIVE = "GSTIN_NOT_ACTIVE"                    # GSP says registration cancelled
     ARITHMETIC_MISMATCH = "ARITHMETIC_MISMATCH"             # taxable + tax != gross
+    CORRUPTED_INVOICE = "CORRUPTED_INVOICE"                 # totals don't foot, or IGST+CGST/SGST both set
     NO_RULE_MATCH = "NO_RULE_MATCH"                          # no rule covers this category
     DUPLICATE_CLAIM = "DUPLICATE_CLAIM"                      # same invoice already seen
     CONTESTED_RULE = "CONTESTED_RULE"                        # rule is contested -> provisional, not auto-block

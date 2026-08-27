@@ -20,7 +20,8 @@ from .log import banner, console, log, rupees, step
 from .models import Claim, Payout, Verdict
 from .tools.razorpay import RazorpayClient, execute_payout, reconcile_payout
 
-HOLD_REASONS = {ReasonCode.DUPLICATE_CLAIM.value, ReasonCode.ARITHMETIC_MISMATCH.value}
+HOLD_REASONS = {ReasonCode.DUPLICATE_CLAIM.value, ReasonCode.ARITHMETIC_MISMATCH.value,
+                ReasonCode.CORRUPTED_INVOICE.value}
 
 
 def _latest_verdict(session, claim_id: str) -> Verdict | None:

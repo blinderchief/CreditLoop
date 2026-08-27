@@ -77,10 +77,10 @@ DEFAULT_RULES: list[Rule] = [
         approved_by="ca_review_2026_03_11", effective_from="2026-01-01",
     ),
     Rule(
-        rule_id="TAX_ARITHMETIC", version=1, check="arithmetic_consistent",
-        verdict="EXCEPTION:ARITHMETIC_MISMATCH",
-        condition="abs(taxable + cgst + sgst + igst - amount_gross) <= tolerance",
-        source_citation="Internal control — invoice must foot",
+        rule_id="TAX_ARITHMETIC", version=2, check="arithmetic_consistent",
+        verdict="EXCEPTION:CORRUPTED_INVOICE",
+        condition="taxable + cgst + sgst + igst == amount_gross AND not (IGST and CGST/SGST both set)",
+        source_citation="Internal control — Python verifies every total; no LLM math",
         approved_by="ca_review_2026_03_11", effective_from="2026-01-01",
     ),
     Rule(

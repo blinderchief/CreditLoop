@@ -98,7 +98,7 @@ export interface Draft {
   kind: string; subject: string; english: string; hinglish: string; source: string;
 }
 export interface Overclaim {
-  exposure: number; interest_24pc_yr: number; claims: number;
+  exposure: number; interest_24pc_yr: number; interest_accrued?: number; claims: number;
   breakdown: { label: string; amount: number; claims: number }[];
 }
 export interface RegistrationRoi {

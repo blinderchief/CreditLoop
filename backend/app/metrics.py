@@ -134,6 +134,23 @@ def compute_metrics(pipeline_stats: dict | None = None) -> dict:
     state_trapped = _prf("STATE_TRAPPED")
     wrong_gstin = _prf("WRONG_GSTIN_USED")
 
+    # --- arithmetic guard catch rate (must be 100%) ----------------------
+    corrupt_truth = [c for c in claims if gt[c.claim_id]["expected_decision"] == "EXCEPTION:CORRUPTED_INVOICE"]
+    corrupt_caught = sum(1 for c in corrupt_truth
+                         if verdicts[c.claim_id].decision == Decision.EXCEPTION
+                         and verdicts[c.claim_id].reason_code == "CORRUPTED_INVOICE")
+    arithmetic_catch_rate = round(corrupt_caught / len(corrupt_truth), 4) if corrupt_truth else 1.0
+
+    # --- place-of-supply classification accuracy -------------------------
+    # Of the POS-driven verdicts (trapped / wrong-gstin / recoverable-igst),
+    # how many match ground truth. Report both, per FIX-4 (precision hides
+    # over-blocking; this is the paired coverage number).
+    pos_codes = {"STATE_TRAPPED", "WRONG_GSTIN_USED", "RECOVERABLE_IGST"}
+    pos_truth = [c for c in claims if gt[c.claim_id]["expected_decision"] in pos_codes]
+    pos_correct = sum(1 for c in pos_truth
+                      if verdicts[c.claim_id].decision.value == gt[c.claim_id]["expected_decision"])
+    pos_accuracy = round(pos_correct / len(pos_truth), 4) if pos_truth else 1.0
+
     # --- overclaim exposure: dead credit that was already claimed in 3B -------
     dead_vals = {Decision.STATE_TRAPPED, Decision.BLOCKED_17_5, Decision.UNRECOVERABLE_WRONG_ENTITY}
     over_flagged = [c for c in claims if c.already_claimed and verdicts[c.claim_id].decision in dead_vals]
@@ -173,6 +190,8 @@ def compute_metrics(pipeline_stats: dict | None = None) -> dict:
         "section_17_5": s175,
         "state_trapped": state_trapped,
         "wrong_gstin": wrong_gstin,
+        "pos_classification_accuracy": pos_accuracy,
+        "arithmetic_catch_rate": arithmetic_catch_rate,
         "overclaim": overclaim,
         "extraction": extraction,
         "throughput": pipeline_stats or {},

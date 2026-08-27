@@ -111,10 +111,10 @@ SCENARIO_COUNTS = {
     "wrong_gstin_used": 10,      # right state, wrong company GSTIN → FIXABLE
     "overclaim_trapped": 12,     # state-trapped AND already claimed → owe back + interest
     # existing hard / exception cases
-    "wrong_entity": 30,
+    "wrong_entity": 25,
     "missing_gstin": 16,
     "blocked_175": 16,
-    "arithmetic_mismatch": 5,
+    "corrupted_invoice": 10,     # totals don't foot, or IGST+CGST/SGST both set
     "duplicate": 4,
     "low_confidence": 6,
     "invalid_gstin": 4,
@@ -367,9 +367,14 @@ def build_claims(vendors: list[Vendor], rng: random.Random):
             expected_decision = "BLOCKED_17_5"
             in_2b = rng.random() < vendor.reliability_score
             already_claimed = rng.random() < 0.35   # restaurant bills claimed despite 17(5)
-        elif scen == "arithmetic_mismatch":
-            gross = round(gross + rng.uniform(200, 900), 2)
-            expected_decision = "EXCEPTION:ARITHMETIC_MISMATCH"
+        elif scen == "corrupted_invoice":
+            if rng.random() < 0.5:
+                gross = round(gross + rng.uniform(200, 900), 2)   # totals don't foot
+            elif cgst > 0:
+                igst = round(cgst, 2)                             # IGST + CGST/SGST both set
+            else:
+                cgst = sgst = round(igst / 2, 2)                  # both set (the interstate case)
+            expected_decision = "EXCEPTION:CORRUPTED_INVOICE"
         elif scen == "invalid_gstin":
             supplier_gstin = supplier_gstin[:14] + ("A" if supplier_gstin[14] != "A" else "B")
             expected_decision = "EXCEPTION:INVALID_GSTIN"
@@ -391,6 +396,7 @@ def build_claims(vendors: list[Vendor], rng: random.Random):
             seq=len(claims), employee_id=emp_id, employee_name=emp_name, amount_gross=gross,
             category=cat, description=f"{cat.value} — {vendor.legal_name.split(' (')[0]}",
             submitted_at=_now(), already_claimed=already_claimed,
+            claimed_days_ago=rng.randint(45, 400) if already_claimed else 0,
         )
         invoice = Invoice(
             claim_id=claim.claim_id, supplier_gstin=supplier_gstin,
@@ -399,6 +405,7 @@ def build_claims(vendors: list[Vendor], rng: random.Random):
             buyer_gstin=buyer_gstin, buyer_name=buyer_name,
             extraction_confidence=confidence, extraction_method=ExtractionMethod.SYNTHETIC_TRUTH,
             supplier_state_code=(supplier_gstin[:2] if supplier_gstin else None),
+            buyer_gstin_used=buyer_gstin,
         )
         claims.append(claim)
         invoices.append(invoice)

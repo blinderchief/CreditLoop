@@ -1,5 +1,13 @@
 # CreditLoop — Architecture
 
+CreditLoop is a **compliance firewall** in three strictly separated parts:
+
+- **The Reader** — a vision model (Gemini). Allowed to read, allowed to be unsure, **never decides**.
+- **The Judge** — deterministic Python. Never guesses; cites the law (rule id + version) on every verdict.
+- **The Actor** — idempotent payouts. Keyed on claim id; **cannot double-pay**.
+
+(These map onto the three layers below — Reader ≈ extraction into Layer 1, Judge = Layer 2, Actor = Layer 3.) The firewall is the product: a language model can read a crumpled receipt and propose a rule change, but it can never change a tax verdict or move money.
+
 ## The one decision everything hangs on
 
 **Deterministic judgment and learned judgment are kept in separate engines that never mix.**

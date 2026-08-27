@@ -107,6 +107,10 @@ def _supplier_gstin_active(ctx: EvalContext) -> bool:
 
 
 def _arithmetic_consistent(ctx: EvalContext) -> bool:
+    # (1) IGST and CGST/SGST must never both be non-zero on one invoice.
+    if ctx.igst > 0 and (ctx.cgst > 0 or ctx.sgst > 0):
+        return False
+    # (2) taxable + tax must foot to the gross, within tolerance.
     tol = max(ARITHMETIC_TOLERANCE_ABS, ctx.amount_gross * ARITHMETIC_TOLERANCE_PCT)
     return abs(ctx.taxable_value + ctx.total_tax - ctx.amount_gross) <= tol
 
