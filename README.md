@@ -4,7 +4,6 @@
 
 CreditLoop is an AI finance agent that sorts the GST on every employee expense into three fates — recoverable, structurally dead, or already overclaimed — and decides *before* the money moves.
 
-Razorpay AI Buildathon 2026 · Track 04 (AI Finance Controller).
 
 ![Landing](docs/screenshots/landing.png)
 
